@@ -49,7 +49,7 @@ def load_model(checkpoint_path: str):
     print(json.dumps(ckpt_config.model_dump(), indent=4))
 
     # Initialize tokenizer and language model
-    img_proc = AutoImageProcessor.from_pretrained(model_cfg.vision_encoder_name)
+    img_proc = AutoImageProcessor.from_pretrained(model_cfg.vision_encoder_name, use_fast=True)
 
     # Create VLM with pre-loaded language model
     if isinstance(model_cfg, NitroGen_Config):
