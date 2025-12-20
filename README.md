@@ -20,27 +20,30 @@ NitroGen is trained through behavior cloning on the largest video-action gamepla
 
 ## Prerequisites
 
-We **do not distribute game environments**, you must use your own copies of the games. This repository only supports running the agent on **Windows games**. You can serve the model from a Linux machine for inference, but the game ultimately has to run on Windows. We have tested on Windows 11 with Python ≥ 3.12.
+We **do not distribute game environments**, you must use your own copies of the games. This repository only supports running the agent on **Windows games**. You can serve the model from a Linux machine for inference, but the game ultimately has to run on Windows. We have tested on Windows 11 with Python == 3.12.
 
 ## Setup
 
 Install this repo:
 ```bash
-git clone https://github.com/MineDojo/NitroGen.git
-cd NitroGen
-pip install -e .
+git clone https://github.com/dffdeeq/NitroGen-improved.git
+cd NitroGen-improved
+
+pip install uv
+# You can use different CUDA versions with installation (cu126, cu128, cu129, cpu(currently unavailable)), for example we use 12.9 CUDA version: 
+uv sync --extra cu129
 ```
 
 Download NitroGen checkpoint from [HuggingFace](https://huggingface.co/nvidia/NitroGen):
 ```bash
-hf download nvidia/NitroGen ng.pt
+hf download nvidia/NitroGen --local-dir ./models ng.pt
 ```
 
 # Getting Started
 
 First, start an inference server for the model:
 ```bash
-python scripts/serve.py <path_to_ng.pt>  
+python scripts/serve.py ./models/ng.pt
 ```
 
 Then, run the agent on the game of your choice:
@@ -63,4 +66,10 @@ If you find our work useful, please consider citing us!
 }
 ``` -->
 
-**Disclaimer**: This project is strictly for research purposes and is not an official NVIDIA product.
+# Disclaimer:
+- This project is strictly for research purposes and is not an official NVIDIA product. 
+- This repo is fork of [MineDojo/NitroGen](https://github.com/MineDojo/NitroGen) and contains some improvements:
+  - Faster image processing
+  - Enhanced CUDA support
+  - Improved game window search
+  - Ability to specify process IDs instead of just names
