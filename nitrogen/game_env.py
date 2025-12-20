@@ -21,96 +21,101 @@ import win32gui
 import win32api
 import win32con
 
-def get_process_info(process_name):
-    """
-    Get process information for a given process name on Windows.
-    
-    Args:
-        process_name (str): Name of the process (e.g., "isaac-ng.exe")
-    
-    Returns:
-        list: List of dictionaries containing PID, window_name, and architecture
-              for each matching process. Returns empty list if no process found.
-    """
-    results = []
-    
-    # Find all processes with the given name
-    for proc in psutil.process_iter(['pid', 'name']):
+
+def _get_architecture(pid: int) -> str:
+    try:
+        process_handle = win32api.OpenProcess(
+            win32con.PROCESS_QUERY_INFORMATION,
+            False,
+            pid
+        )
+        is_wow64 = win32process.IsWow64Process(process_handle)
+        win32api.CloseHandle(process_handle)
+        return "x86" if is_wow64 else "x64"
+    except Exception:
+        return "unknown"
+
+
+def _enum_visible_windows_for_pid(pid: int):
+    windows = []
+
+    def enum_window_callback(hwnd, pid_to_find):
         try:
-            if proc.info['name'].lower() == process_name.lower():
-                pid = proc.info['pid']
-                
-                # Get architecture
-                try:
-                    # Check if process is 32-bit or 64-bit
-                    process_handle = win32api.OpenProcess(
-                        win32con.PROCESS_QUERY_INFORMATION, 
-                        False, 
-                        pid
-                    )
-                    is_wow64 = win32process.IsWow64Process(process_handle)
-                    win32api.CloseHandle(process_handle)
-                    
-                    # On 64-bit Windows: WOW64 means "Windows 32-bit on Windows 64-bit", i.e. a 32-bit process
-                    architecture = "x86" if is_wow64 else "x64"
-                except:
-                    architecture = "unknown"
-                
-                # Find windows associated with this PID
-                windows = []
-                
-                def enum_window_callback(hwnd, pid_to_find):
-                    _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
-                    if found_pid == pid_to_find:
-                        window_text = win32gui.GetWindowText(hwnd)
-                        if window_text and win32gui.IsWindowVisible(hwnd):
-                            windows.append({
-                                'hwnd': hwnd,
-                                'title': window_text,
-                                'visible': win32gui.IsWindowVisible(hwnd)
-                            })
-                    return True
-                
-                # Find all windows for this PID
-                try:
-                    win32gui.EnumWindows(enum_window_callback, pid)
-                except:
-                    pass
-                
-                # Choose the best window
-                window_name = None
-                if windows:
-                    if len(windows) > 1:
-                        print(f"Multiple windows found for PID {pid}: {[win['title'] for win in windows]}")
-                        print("Using heuristics to select the correct window...")
-                    # Filter out common proxy/helper windows
-                    proxy_keywords = ['d3dproxywindow', 'proxy', 'helper', 'overlay']
-                    
-                    # First try to find a visible window without proxy keywords
-                    for win in windows:
-                        if not any(keyword in win['title'].lower() for keyword in proxy_keywords):
-                            window_name = win['title']
-                            break
-                    
-                    # If no good window found, just use the first one
-                    if window_name is None and windows:
-                        window_name = windows[0]['title']
-                
-                results.append({
-                    'pid': pid,
-                    'window_name': window_name,
-                    'architecture': architecture
-                })
-                
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    
-    if len(results) == 0:
-        raise ValueError(f"No process found with name: {process_name}")
-    elif len(results) > 1:
-        print(f"Warning: Multiple processes found with name '{process_name}'. Returning first match.")
-    
-    return results[0]
+            _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+            if found_pid == pid_to_find and win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if title:
+                    windows.append({
+                        "hwnd": hwnd,
+                        "title": title
+                    })
+        except Exception:
+            pass
+        return True
+
+    win32gui.EnumWindows(enum_window_callback, pid)
+    return windows
+
+
+def get_process_info(process_identifier):
+    """
+    process_identifier: str process name ("javaw.exe") OR pid (int) OR pid as str ("5936")
+    Returns: dict {pid, name, architecture, window_name, window_hwnd}
+    """
+    pids = []
+
+    if isinstance(process_identifier, int) or (isinstance(process_identifier, str) and process_identifier.isdigit()):
+        pid = int(process_identifier)
+        if not psutil.pid_exists(pid):
+            raise ValueError(f"PID does not exist: {pid}")
+        pids = [pid]
+    else:
+        proc_name = str(process_identifier).lower()
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                if (proc.info.get('name') or "").lower() == proc_name:
+                    pids.append(proc.info['pid'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        if not pids:
+            raise ValueError(f"No process found with name: {process_identifier}")
+
+        if len(pids) > 1:
+            print(f"Warning: Multiple processes found with name '{process_identifier}'. Will pick one with a visible window if possible.")
+
+    candidates = []
+    proxy_keywords = ['d3dproxywindow', 'proxy', 'helper', 'overlay']
+
+    for pid in pids:
+        try:
+            name = psutil.Process(pid).name()
+        except Exception:
+            name = None
+
+        arch = _get_architecture(pid)
+        wins = _enum_visible_windows_for_pid(pid)
+
+        window_hwnd = None
+        window_name = None
+
+        if wins:
+            good = [w for w in wins if not any(k in w["title"].lower() for k in proxy_keywords)]
+            pick = good[0] if good else wins[0]
+            window_hwnd = pick["hwnd"]
+            window_name = pick["title"]
+
+        candidates.append({
+            "pid": pid,
+            "name": name,
+            "architecture": arch,
+            "window_name": window_name,
+            "window_hwnd": window_hwnd,
+            "has_window": window_hwnd is not None
+        })
+
+    candidates.sort(key=lambda x: (x["has_window"], x["pid"]), reverse=True)
+    return candidates[0]
 
 
 XBOX_MAPPING = {
@@ -383,8 +388,8 @@ class GamepadEnv(Env):
     def __init__(
         self,
         game,
-        image_height=1440,
-        image_width=2560,
+        image_height=800,
+        image_width=1280,
         controller_type="xbox",
         game_speed=1.0,
         env_fps=10,
