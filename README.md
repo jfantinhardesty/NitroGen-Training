@@ -51,7 +51,12 @@ Then, run the agent on the game of your choice:
 python scripts/play.py --process '<game_executable_name>.exe'
 ```
 
-The `--process` parameter must be the exact executable name of the game you want to play. You can find it by right-clicking on the game process in Windows Task Manager (Ctrl+Shift+Esc), and selecting `Properties`. The process name should be in the `General` tab and end with `.exe`.
+The `--process` parameter must be the exact executable name or ID of the game you want to play. You can find it by right-clicking on the game process in Windows Task Manager (Ctrl+Shift+Esc), and selecting `Properties`. The process name should be in the `General` tab and end with `.exe`. 
+
+For the exact ID you can execute this command in PowerShell (Might help with windows that runs inside other processes like Minecraft in javaw.exe):
+```
+Get-Process {process_name} | Select-Object Id, ProcessName, MainWindowTitle | Format-Table -Auto
+```
 
 <!-- TODO # Paper and Citation
 

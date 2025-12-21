@@ -1,0 +1,35 @@
+services:
+  nitrogen-server:
+    image: nitrogen-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.inference
+      cache_from:
+        - type=local,src=.docker-cache
+      cache_to:
+        - type=local,dest=.docker-cache,mode=max
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./models:/app/models:ro
+      # Cache persistence for faster subsequent runs
+      - triton_cache:/tmp/triton_cache
+      - inductor_cache:/tmp/torchinductor_cache
+      # HuggingFace cache from host PC (no re-download needed)
+      - C:\Users\dffdeeq\.cache\huggingface:/root/.cache/huggingface
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Use --no-compile for faster startup (first run); remove for production
+    command: ["python3", "scripts/serve.py", "/app/models/ng.pt", "--steps", "4"]
+
+volumes:
+  triton_cache:
+  inductor_cache:

@@ -19,6 +19,9 @@ parser = argparse.ArgumentParser(description="VLM Inference")
 parser.add_argument("--process", type=str, default="celeste.exe", help="Game to play")
 parser.add_argument("--allow-menu", action="store_true", help="Allow menu actions (Disabled by default)")
 parser.add_argument("--port", type=int, default=5555, help="Port for model server")
+parser.add_argument("--no-record", action="store_true", help="Disable video recording for faster inference")
+parser.add_argument("--no-debug-save", action="store_true", help="Disable debug PNG saving")
+parser.add_argument("--actions-per-step", type=int, default=None, help="Use only first N actions per predict (receding horizon). Default: use all")
 
 args = parser.parse_args()
 
@@ -86,6 +89,10 @@ zero_action = OrderedDict(
 TOKEN_SET = BUTTON_ACTION_TOKENS
 
 print("Model loaded, starting environment...")
+if args.actions_per_step:
+    print(f"Receding horizon mode: using {args.actions_per_step} actions per predict (model outputs 18)")
+else:
+    print("Using all actions per predict")
 for i in range(3):
     print(f"{3 - i}...")
     time.sleep(1)
@@ -146,87 +153,93 @@ obs, reward, terminated, truncated, info = env.step(action=zero_action)
 frames = None
 step_count = 0
 
-with VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium") as debug_recorder:
-    with VideoRecorder(str(PATH_MP4_CLEAN), fps=60, crf=28, preset="medium") as clean_recorder:
-        try:
-            while True:
-                obs = preprocess_img(obs)
+def run_loop(debug_recorder=None, clean_recorder=None):
+    global obs, step_count
+    try:
+        while True:
+            loop_start = time.perf_counter()
+
+            obs = preprocess_img(obs)
+            if not args.no_debug_save:
                 obs.save(PATH_DEBUG / f"{step_count:05d}.png")
 
-                pred = policy.predict(obs)
+            pred = policy.predict(obs)
 
-                j_left, j_right, buttons = pred["j_left"], pred["j_right"], pred["buttons"]
+            j_left, j_right, buttons = pred["j_left"], pred["j_right"], pred["buttons"]
 
-                n = len(buttons)
-                assert n == len(j_left) == len(j_right), "Mismatch in action lengths"
+            n = len(buttons)
+            assert n == len(j_left) == len(j_right), "Mismatch in action lengths"
 
+            # Receding horizon: use only first N actions if specified
+            actions_to_use = args.actions_per_step if args.actions_per_step else n
 
-                env_actions = []
+            env_actions = []
 
-                for i in range(n):
-                    move_action = zero_action.copy()
+            for i in range(min(actions_to_use, n)):
+                move_action = zero_action.copy()
 
-                    xl, yl = j_left[i]
-                    xr, yr = j_right[i]
-                    move_action["AXIS_LEFTX"] = np.array([int(xl * 32767)], dtype=np.long)
-                    move_action["AXIS_LEFTY"] = np.array([int(yl * 32767)], dtype=np.long)
-                    move_action["AXIS_RIGHTX"] = np.array([int(xr * 32767)], dtype=np.long)
-                    move_action["AXIS_RIGHTY"] = np.array([int(yr * 32767)], dtype=np.long)
-                    
-                    button_vector = buttons[i]
-                    assert len(button_vector) == len(TOKEN_SET), "Button vector length does not match token set length"
+                xl, yl = j_left[i]
+                xr, yr = j_right[i]
+                move_action["AXIS_LEFTX"] = np.array([int(xl * 32767)], dtype=np.long)
+                move_action["AXIS_LEFTY"] = np.array([int(yl * 32767)], dtype=np.long)
+                move_action["AXIS_RIGHTX"] = np.array([int(xr * 32767)], dtype=np.long)
+                move_action["AXIS_RIGHTY"] = np.array([int(yr * 32767)], dtype=np.long)
 
-                    
-                    for name, value in zip(TOKEN_SET, button_vector):
-                        if "TRIGGER" in name:
-                            move_action[name] =  np.array([value * 255], dtype=np.long)
-                        else:
-                            move_action[name] = 1 if value > BUTTON_PRESS_THRES else 0
+                button_vector = buttons[i]
+                assert len(button_vector) == len(TOKEN_SET), "Button vector length does not match token set length"
 
+                for name, value in zip(TOKEN_SET, button_vector):
+                    if "TRIGGER" in name:
+                        move_action[name] = np.array([value * 255], dtype=np.long)
+                    else:
+                        move_action[name] = 1 if value > BUTTON_PRESS_THRES else 0
 
-                    env_actions.append(move_action)
+                env_actions.append(move_action)
 
-                print(f"Executing {len(env_actions)} actions, each action will be repeated {action_downsample_ratio} times")
+            for i, a in enumerate(env_actions):
+                if NO_MENU:
+                    if a["START"]:
+                        print("Model predicted start, disabling this action")
+                    a["GUIDE"] = 0
+                    a["START"] = 0
+                    a["BACK"] = 0
 
-                for i, a in enumerate(env_actions):
-                    if NO_MENU:
-                        if a["START"]:
-                            print("Model predicted start, disabling this action")
-                        a["GUIDE"] = 0
-                        a["START"] = 0
-                        a["BACK"] = 0
+                for _ in range(action_downsample_ratio):
+                    obs, reward, terminated, truncated, info = env.step(action=a)
 
-                    for _ in range(action_downsample_ratio):
-                        obs, reward, terminated, truncated, info = env.step(action=a)
-
-                        # resize obs to 720p
+                    if debug_recorder and clean_recorder:
                         obs_viz = np.array(obs).copy()
                         clean_viz = cv2.resize(obs_viz, (1920, 1080), interpolation=cv2.INTER_AREA)
                         debug_viz = create_viz(
-                            cv2.resize(obs_viz, (1280, 720), interpolation=cv2.INTER_AREA), # 720p
-                            i,
-                            j_left,
-                            j_right,
-                            buttons,
-                            token_set=TOKEN_SET
+                            cv2.resize(obs_viz, (1280, 720), interpolation=cv2.INTER_AREA),
+                            i, j_left, j_right, buttons, token_set=TOKEN_SET
                         )
                         debug_recorder.add_frame(debug_viz)
                         clean_recorder.add_frame(clean_viz)
 
-                # Append env_actions dictionnary to JSONL file
-                with open(PATH_ACTIONS, "a") as f:
-                    for i, a in enumerate(env_actions):
-                        # convert numpy arrays to lists for JSON serialization
-                        for k, v in a.items():
-                            if isinstance(v, np.ndarray):
-                                a[k] = v.tolist()
-                        a["step"] = step_count
-                        a["substep"] = i
-                        json.dump(a, f)
-                        f.write("\n")
+            # Append env_actions dictionnary to JSONL file
+            with open(PATH_ACTIONS, "a") as f:
+                for i, a in enumerate(env_actions):
+                    for k, v in a.items():
+                        if isinstance(v, np.ndarray):
+                            a[k] = v.tolist()
+                    a["step"] = step_count
+                    a["substep"] = i
+                    json.dump(a, f)
+                    f.write("\n")
 
+            loop_time = time.perf_counter() - loop_start
+            fps = 1.0 / loop_time if loop_time > 0 else 0
+            print(f"Step {step_count}: {len(env_actions)} actions, loop time: {loop_time*1000:.1f}ms ({fps:.1f} FPS)")
+            step_count += 1
+    finally:
+        env.unpause()
+        env.close()
 
-                step_count += 1
-        finally:
-            env.unpause()
-            env.close()
+if args.no_record:
+    print("Recording disabled for faster inference")
+    run_loop()
+else:
+    with VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium") as debug_recorder:
+        with VideoRecorder(str(PATH_MP4_CLEAN), fps=60, crf=28, preset="medium") as clean_recorder:
+            run_loop(debug_recorder, clean_recorder)
