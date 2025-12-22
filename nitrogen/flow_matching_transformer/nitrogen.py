@@ -80,8 +80,10 @@ class SinusoidalPositionalEncoding(nn.Module):
 
         half_dim = self.embedding_dim // 2
         # typical log space frequencies for sinusoidal encoding
+        # Note: create tensor on same device to enable CUDA graphs
+        log_10000 = torch.log(torch.tensor(10000.0, device=device))
         exponent = -torch.arange(half_dim, dtype=torch.float, device=device) * (
-            torch.log(torch.tensor(10000.0)) / half_dim
+            log_10000 / half_dim
         )
         # Expand timesteps to (B, T, 1) then multiply
         freqs = timesteps.unsqueeze(-1) * exponent.exp()  # (B, T, half_dim)
@@ -395,10 +397,11 @@ class NitroGen(torch.nn.Module):
         # This will give us the embeddings we need to place
         valid_vision_embs = vision_flat[non_dropped_mask_expanded]  # [total_valid_tokens, 1152]
 
-        assert valid_vision_embs.shape[0] == vision_mask.sum().item(), (
-            f"Number of valid vision embeddings {valid_vision_embs.shape[0]} does not match "
-            f"the number of _IMG_TOKEN positions {vision_mask.sum().item()}"
-        )
+        # Note: using torch.equal instead of .item() to avoid graph break in torch.compile
+        assert torch.equal(
+            torch.tensor(valid_vision_embs.shape[0], device=vision_mask.device),
+            vision_mask.sum()
+        ), "Number of valid vision embeddings does not match the number of _IMG_TOKEN positions"
         # Now we need to place these at the vision_mask positions
         # Get indices where vision_mask is True
         batch_indices, token_indices = vision_mask.nonzero(as_tuple=True)
@@ -409,8 +412,8 @@ class NitroGen(torch.nn.Module):
         # Handle Game ID tokens
         if self.game_mapping is not None and game_ids is not None:
             game_mask = vl_token_ids == _GAME_ID_TOKEN  # shape: (B, T)
-            num_game_tokens = game_mask.sum().item()
-            if num_game_tokens > 0:
+            # Use torch.any() instead of .item() to avoid graph break
+            if game_mask.any():
 
                 # Assert that each batch item has exactly one game token
                 game_tokens_per_batch = game_mask.sum(dim=1)  # [B] - count of game tokens per batch item
@@ -426,8 +429,9 @@ class NitroGen(torch.nn.Module):
 
         # Project image separator using the learnable sep_embedding.
         sep_mask = vl_token_ids == _IMG_SEP_TOKEN  # shape: (B, T)
-        num_sep = sep_mask.sum().item()
-        if num_sep > 0:
+        # Use torch.any() instead of .item() to avoid graph break
+        if sep_mask.any():
+            num_sep = sep_mask.sum()
             # Expand the separator embedding for each occurrence.
             repeated_sep = self.vis_sep_embedding.unsqueeze(0).expand(num_sep, self.hidden_size)
             # Assign the separator embeddings to the correct positions.
@@ -604,9 +608,11 @@ class NitroGen(torch.nn.Module):
 
             # ---- (b) Build embeddings (actions included)
             # Pass the *current* actions at time t into the action encoder
+            # Note: create tensors directly on device to enable CUDA graphs
+            t_tensor = torch.full((actions.shape[0],), t_discretized, device=device, dtype=torch.float32)
             action_features = self.action_encoder(
                 actions,
-                (torch.ones(actions.shape[0]) * t_discretized).to(device),
+                t_tensor,
                 embodiment_id,
             )
             vl_embs, sa_embs = self.prepare_input_embs(
@@ -622,7 +628,7 @@ class NitroGen(torch.nn.Module):
             vl_embs = self.vl_self_attention_model(vl_embs)
             # vl_embs = self.qformer(vl_embs)
             # ---- (c) Forward pass to get velocity = d/dt x(t)
-            timesteps = torch.from_numpy(np.array([t_discretized])).to(device).long()
+            timesteps = torch.tensor([t_discretized], device=device, dtype=torch.long)
             model_output = self.model(
                 hidden_states=sa_embs,
                 encoder_hidden_states=vl_embs,
@@ -690,9 +696,13 @@ class NitroGen(torch.nn.Module):
 
             # ---- (b) Build embeddings (actions included)
             # Pass the *current* actions at time t into the action encoder
+            # Note: create tensors directly on device to enable CUDA graphs
+            t_tensor = torch.full((actions.shape[0],), t_discretized, device=device, dtype=torch.float32)
+            timesteps = torch.tensor([t_discretized], device=device, dtype=torch.long)
+
             action_features = self.action_encoder(
                 actions,
-                (torch.ones(actions.shape[0]) * t_discretized).to(device),
+                t_tensor,
                 embodiment_id,
             )
 
@@ -706,7 +716,6 @@ class NitroGen(torch.nn.Module):
             )
             vl_embs = self.vl_self_attention_model(vl_embs)
             # ---- (c) Forward pass to get velocity = d/dt x(t)
-            timesteps = torch.from_numpy(np.array([t_discretized])).to(device).long()
             model_output = self.model(
                 hidden_states=sa_embs,
                 encoder_hidden_states=vl_embs,
@@ -726,7 +735,6 @@ class NitroGen(torch.nn.Module):
             )
             vl_embs = self.vl_self_attention_model(vl_embs)
             # ---- (c) Forward pass to get velocity = d/dt x(t)
-            timesteps = torch.from_numpy(np.array([t_discretized])).to(device).long()
             model_output = self.model(
                 hidden_states=sa_embs,
                 encoder_hidden_states=vl_embs,

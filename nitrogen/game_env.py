@@ -365,7 +365,10 @@ class DxcamScreenshotBackend:
             if self.last_screenshot is not None:
                 return self.last_screenshot
             else:
-                return Image.new("RGB", (self.bbox[2], self.bbox[3]), (0, 0, 0))
+                # bbox is (left, top, right, bottom)
+                width = self.bbox[2] - self.bbox[0]
+                height = self.bbox[3] - self.bbox[1]
+                return Image.new("RGB", (width, height), (0, 0, 0))
         screenshot = Image.fromarray(screenshot)
         self.last_screenshot = screenshot
         return screenshot
@@ -388,8 +391,8 @@ class GamepadEnv(Env):
     def __init__(
         self,
         game,
-        image_height=800,
-        image_width=1280,
+        image_height=1080,
+        image_width=1920,
         controller_type="xbox",
         game_speed=1.0,
         env_fps=10,
@@ -469,15 +472,18 @@ class GamepadEnv(Env):
 
         self.game_window.activate()
         l, t, r, b = self.game_window.left, self.game_window.top, self.game_window.right, self.game_window.bottom
-        self.bbox = (l, t, r-l, b-t)
 
         # Initialize speedhack client if using DLL injection
         self.speedhack_client = xsh.Client(process_id=self.game_pid, arch=self.game_arch)
 
         # Get the screenshot backend
         if screenshot_backend == "dxcam":
+            # dxcam uses (left, top, right, bottom)
+            self.bbox = (l, t, r, b)
             self.screenshot_backend = DxcamScreenshotBackend(self.bbox)
         elif screenshot_backend == "pyautogui":
+            # pyautogui uses (left, top, width, height)
+            self.bbox = (l, t, r-l, b-t)
             self.screenshot_backend = PyautoguiScreenshotBackend(self.bbox)
         else:
             raise ValueError("Unsupported screenshot backend. Use 'dxcam' or 'pyautogui'.")
@@ -580,3 +586,7 @@ class GamepadEnv(Env):
         screenshot = screenshot.resize((self.image_width, self.image_height))
 
         return screenshot
+
+    def apply_action(self, action):
+        """Apply action without pause/unpause (for async mode)."""
+        self.gamepad_emulator.step(action)

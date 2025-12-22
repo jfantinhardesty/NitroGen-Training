@@ -1,0 +1,38 @@
+FROM nvidia/cuda:12.8.0-cudnn-runtime-ubuntu24.04
+
+WORKDIR /app
+
+# Install Python 3.12
+RUN apt-get update && apt-get install -y python3.12 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install PyTorch with CUDA 12.8 (Blackwell support)
+RUN pip3 install --no-cache-dir --break-system-packages \
+    torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+# Install serve dependencies
+RUN pip3 install --no-cache-dir --break-system-packages \
+    pyzmq \
+    einops \
+    transformers \
+    pydantic \
+    diffusers \
+    polars \
+    pyyaml
+
+# Copy source code only (no pip install needed, PYTHONPATH handles imports)
+COPY nitrogen/ ./nitrogen/
+COPY scripts/ ./scripts/
+
+ENV PYTHONPATH=/app
+
+# Environment variables for optimal performance
+ENV PYTORCH_ALLOC_CONF=expandable_segments:True
+ENV TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor_cache
+# Remove verbose dynamo logs for cleaner output
+# ENV TORCH_LOGS="+dynamo"
+
+# Enable Triton cache persistence
+ENV TRITON_CACHE_DIR=/tmp/triton_cache
+
+EXPOSE 5555
