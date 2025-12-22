@@ -586,3 +586,7 @@ class GamepadEnv(Env):
         screenshot = screenshot.resize((self.image_width, self.image_height))
 
         return screenshot
+
+    def apply_action(self, action):
+        """Apply action without pause/unpause (for async mode)."""
+        self.gamepad_emulator.step(action)
