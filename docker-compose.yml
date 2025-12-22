@@ -28,7 +28,7 @@ services:
               count: 1
               capabilities: [gpu]
     # Use --no-compile for faster startup (first run); remove for production
-    command: ["python3", "scripts/serve.py", "/app/models/ng.pt", "--steps", "4"]
+    command: ["python3", "scripts/serve.py", "/app/models/ng.pt", "--steps", "16"]
 
 volumes:
   triton_cache:
