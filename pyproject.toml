@@ -3,7 +3,7 @@ name = "nitrogen"
 version = "1.0.0"
 description = "VLM-based game playing agent"
 readme = "README.md"
-requires-python = "==3.14.*"
+requires-python = "==3.13.*"
 
 # Default: everything
 dependencies = [

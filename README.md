@@ -30,7 +30,7 @@ NitroGen is an open foundation model for generalist gaming agents. This multi-ga
 | Component | Requirement |
 |-----------|-------------|
 | OS | Windows 11 |
-| Python | 3.12 |
+| Python | 3.13 |
 | GPU VRAM | ~10 GB (tested on RTX 5060 Ti 16GB) |
 | Game | Your own copy (not distributed) |
 
