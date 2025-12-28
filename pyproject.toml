@@ -3,7 +3,7 @@ name = "nitrogen"
 version = "1.0.0"
 description = "VLM-based game playing agent"
 readme = "README.md"
-requires-python = "==3.12.*"
+requires-python = "==3.14.*"
 
 # Default: everything
 dependencies = [
@@ -65,24 +65,6 @@ cpu = [
     "torchvision",
 ]
 
-cu126 = [
-    "nitrogen",
-    "torch",
-    "torchvision",
-]
-
-cu128 = [
-    "nitrogen",
-    "torch",
-    "torchvision",
-]
-
-cu129 = [
-    "nitrogen",
-    "torch==2.8.0+cu129",
-    "torchvision==0.23.0+cu129",
-]
-
 cu130 = [
     "nitrogen",
     "torch==2.9.1+cu130",
@@ -103,9 +85,6 @@ build-backend = "setuptools.build_meta"
 conflicts = [
     [
         { extra = "cpu" },
-        { extra = "cu126" },
-        { extra = "cu128" },
-        { extra = "cu129" },
         { extra = "cu130" },
     ],
 ]
@@ -113,37 +92,16 @@ conflicts = [
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu126", extra = "cu126" },
-    { index = "pytorch-cu128", extra = "cu128" },
-    { index = "pytorch-cu129", extra = "cu129" },
     { index = "pytorch-cu130", extra = "cu130" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu126", extra = "cu126" },
-    { index = "pytorch-cu128", extra = "cu128" },
-    { index = "pytorch-cu129", extra = "cu129" },
     { index = "pytorch-cu130", extra = "cu130" },
 ]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu129"
-url = "https://download.pytorch.org/whl/cu129"
 explicit = true
 
 [[tool.uv.index]]

@@ -2,20 +2,19 @@ import time
 import platform
 
 import pyautogui
-import dxcam
 import pywinctl as pwc
 import xspeedhack as xsh
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from PIL import Image
 
-import time
-
 import vgamepad as vg
 
 import psutil
 
-assert platform.system().lower() == "windows", "This module is only supported on Windows."
+assert platform.system().lower() == "windows", (
+    "This module is only supported on Windows."
+)
 import win32process
 import win32gui
 import win32api
@@ -25,9 +24,7 @@ import win32con
 def _get_architecture(pid: int) -> str:
     try:
         process_handle = win32api.OpenProcess(
-            win32con.PROCESS_QUERY_INFORMATION,
-            False,
-            pid
+            win32con.PROCESS_QUERY_INFORMATION, False, pid
         )
         is_wow64 = win32process.IsWow64Process(process_handle)
         win32api.CloseHandle(process_handle)
@@ -45,10 +42,7 @@ def _enum_visible_windows_for_pid(pid: int):
             if found_pid == pid_to_find and win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd)
                 if title:
-                    windows.append({
-                        "hwnd": hwnd,
-                        "title": title
-                    })
+                    windows.append({"hwnd": hwnd, "title": title})
         except Exception:
             pass
         return True
@@ -64,17 +58,19 @@ def get_process_info(process_identifier):
     """
     pids = []
 
-    if isinstance(process_identifier, int) or (isinstance(process_identifier, str) and process_identifier.isdigit()):
+    if isinstance(process_identifier, int) or (
+        isinstance(process_identifier, str) and process_identifier.isdigit()
+    ):
         pid = int(process_identifier)
         if not psutil.pid_exists(pid):
             raise ValueError(f"PID does not exist: {pid}")
         pids = [pid]
     else:
         proc_name = str(process_identifier).lower()
-        for proc in psutil.process_iter(['pid', 'name']):
+        for proc in psutil.process_iter(["pid", "name"]):
             try:
-                if (proc.info.get('name') or "").lower() == proc_name:
-                    pids.append(proc.info['pid'])
+                if (proc.info.get("name") or "").lower() == proc_name:
+                    pids.append(proc.info["pid"])
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 
@@ -82,10 +78,12 @@ def get_process_info(process_identifier):
             raise ValueError(f"No process found with name: {process_identifier}")
 
         if len(pids) > 1:
-            print(f"Warning: Multiple processes found with name '{process_identifier}'. Will pick one with a visible window if possible.")
+            print(
+                f"Warning: Multiple processes found with name '{process_identifier}'. Will pick one with a visible window if possible."
+            )
 
     candidates = []
-    proxy_keywords = ['d3dproxywindow', 'proxy', 'helper', 'overlay']
+    proxy_keywords = ["d3dproxywindow", "proxy", "helper", "overlay"]
 
     for pid in pids:
         try:
@@ -100,19 +98,25 @@ def get_process_info(process_identifier):
         window_name = None
 
         if wins:
-            good = [w for w in wins if not any(k in w["title"].lower() for k in proxy_keywords)]
+            good = [
+                w
+                for w in wins
+                if not any(k in w["title"].lower() for k in proxy_keywords)
+            ]
             pick = good[0] if good else wins[0]
             window_hwnd = pick["hwnd"]
             window_name = pick["title"]
 
-        candidates.append({
-            "pid": pid,
-            "name": name,
-            "architecture": arch,
-            "window_name": window_name,
-            "window_hwnd": window_hwnd,
-            "has_window": window_hwnd is not None
-        })
+        candidates.append(
+            {
+                "pid": pid,
+                "name": name,
+                "architecture": arch,
+                "window_name": window_name,
+                "window_hwnd": window_hwnd,
+                "has_window": window_hwnd is not None,
+            }
+        )
 
     candidates.sort(key=lambda x: (x["has_window"], x["pid"]), reverse=True)
     return candidates[0]
@@ -301,12 +305,16 @@ class GamepadEmulator:
         """
         if joystick == "AXIS_LEFTX":
             self.left_joystick_x = value
-            self.gamepad.left_joystick(x_value=self.left_joystick_x, y_value=self.left_joystick_y)
+            self.gamepad.left_joystick(
+                x_value=self.left_joystick_x, y_value=self.left_joystick_y
+            )
         elif joystick == "AXIS_LEFTY":
             if self.system == "windows":
                 value = -value - 1
             self.left_joystick_y = value
-            self.gamepad.left_joystick(x_value=self.left_joystick_x, y_value=self.left_joystick_y)
+            self.gamepad.left_joystick(
+                x_value=self.left_joystick_x, y_value=self.left_joystick_y
+            )
         elif joystick == "AXIS_RIGHTX":
             self.right_joystick_x = value
             self.gamepad.right_joystick(
@@ -345,7 +353,6 @@ class GamepadEmulator:
 
 
 class PyautoguiScreenshotBackend:
-
     def __init__(self, bbox):
         self.bbox = bbox
 
@@ -356,6 +363,7 @@ class PyautoguiScreenshotBackend:
 class DxcamScreenshotBackend:
     def __init__(self, bbox, fps):
         import dxcam
+
         self.camera = dxcam.create()
         self.bbox = bbox
         self.last_screenshot = None
@@ -392,23 +400,29 @@ class GamepadEnv(Env):
     """
 
     def __init__(
-            self,
-            game,
-            image_height=1440,
-            image_width=2560,
-            controller_type="xbox",
-            game_speed=1.0,
-            env_fps=10,
-            async_mode=True,
-            screenshot_backend="dxcam",
+        self,
+        game,
+        image_height=1440,
+        image_width=2560,
+        controller_type="xbox",
+        game_speed=1.0,
+        env_fps=10,
+        async_mode=True,
+        screenshot_backend="dxcam",
     ):
         super().__init__()
 
         # Assert that system is windows
         os_name = platform.system().lower()
-        assert os_name == "windows", "This environment is currently only supported on Windows."
-        assert controller_type in ["xbox", "ps4"], "Platform must be either 'xbox' or 'ps4'"
-        assert screenshot_backend in ["pyautogui", "dxcam"], "Screenshot backend must be either 'pyautogui' or 'dxcam'"
+        assert os_name == "windows", (
+            "This environment is currently only supported on Windows."
+        )
+        assert controller_type in ["xbox", "ps4"], (
+            "Platform must be either 'xbox' or 'ps4'"
+        )
+        assert screenshot_backend in ["pyautogui", "dxcam"], (
+            "Screenshot backend must be either 'pyautogui' or 'dxcam'"
+        )
 
         self.game = game
         self.image_height = int(image_height)
@@ -418,7 +432,9 @@ class GamepadEnv(Env):
         self.step_duration = self.calculate_step_duration()
         self.async_mode = async_mode
 
-        self.gamepad_emulator = GamepadEmulator(controller_type=controller_type, system=os_name)
+        self.gamepad_emulator = GamepadEmulator(
+            controller_type=controller_type, system=os_name
+        )
         proc_info = get_process_info(game)
 
         self.game_pid = proc_info["pid"]
@@ -426,13 +442,17 @@ class GamepadEnv(Env):
         self.game_window_name = proc_info["window_name"]
 
         print(
-            f"Game process found: {self.game} (PID: {self.game_pid}, Arch: {self.game_arch}, Window: {self.game_window_name})")
+            f"Game process found: {self.game} (PID: {self.game_pid}, Arch: {self.game_arch}, Window: {self.game_window_name})"
+        )
 
         if self.game_pid is None:
             raise Exception(f"Could not find PID for game: {game}")
 
         self.observation_space = Box(
-            low=0, high=255, shape=(self.image_height, self.image_width, 3), dtype="uint8"
+            low=0,
+            high=255,
+            shape=(self.image_height, self.image_width, 3),
+            dtype="uint8",
         )
 
         # Define a unified action space
@@ -474,10 +494,17 @@ class GamepadEnv(Env):
             raise Exception(f"No window found with game name: {self.game}")
 
         self.game_window.activate()
-        l, t, r, b = self.game_window.left, self.game_window.top, self.game_window.right, self.game_window.bottom
+        l, t, r, b = (
+            self.game_window.left,
+            self.game_window.top,
+            self.game_window.right,
+            self.game_window.bottom,
+        )
 
         # Initialize speedhack client if using DLL injection
-        self.speedhack_client = xsh.Client(process_id=self.game_pid, arch=self.game_arch)
+        self.speedhack_client = xsh.Client(
+            process_id=self.game_pid, arch=self.game_arch
+        )
 
         # Get the screenshot backend
         if screenshot_backend == "dxcam":
@@ -486,10 +513,14 @@ class GamepadEnv(Env):
             self.screenshot_backend = DxcamScreenshotBackend(self.bbox, self.env_fps)
         elif screenshot_backend == "pyautogui":
             # pyautogui uses (left, top, width, height)
-            self.bbox = (l, t, r-l, b-t)
-            self.screenshot_backend = PyautoguiScreenshotBackend(self.bbox, self.env_fps)
+            self.bbox = (l, t, r - l, b - t)
+            self.screenshot_backend = PyautoguiScreenshotBackend(
+                self.bbox, self.env_fps
+            )
         else:
-            raise ValueError("Unsupported screenshot backend. Use 'dxcam' or 'pyautogui'.")
+            raise ValueError(
+                "Unsupported screenshot backend. Use 'dxcam' or 'pyautogui'."
+            )
 
     def calculate_step_duration(self):
         """

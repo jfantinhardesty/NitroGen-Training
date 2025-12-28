@@ -1,5 +1,3 @@
-import os
-import sys
 import time
 import json
 import threading
@@ -49,15 +47,43 @@ class ActionState:
 
 parser = argparse.ArgumentParser(description="VLM Inference")
 parser.add_argument("--process", type=str, default="celeste.exe", help="Game to play")
-parser.add_argument("--allow-menu", action="store_true", help="Allow menu actions (Disabled by default)")
+parser.add_argument(
+    "--allow-menu", action="store_true", help="Allow menu actions (Disabled by default)"
+)
 parser.add_argument("--port", type=int, default=5555, help="Port for model server")
-parser.add_argument("--no-record", action="store_true", help="Disable video recording for faster inference")
-parser.add_argument("--no-debug-save", action="store_true", help="Disable debug PNG saving")
-parser.add_argument("--actions-per-step", type=int, default=None, help="Use only first N actions per predict (receding horizon). Default: use all")
-parser.add_argument("--async", dest="async_mode", action="store_true", default=True, help="Async mode: game runs in real-time, inference in background (default)")
-parser.add_argument("--sync", dest="async_mode", action="store_false", help="Sync mode: game paused during inference (uses speedhack)")
-parser.add_argument("--width", type=int, default=1920, help="Game capture width (default: 1920)")
-parser.add_argument("--height", type=int, default=1080, help="Game capture height (default: 1080)")
+parser.add_argument(
+    "--no-record",
+    action="store_true",
+    help="Disable video recording for faster inference",
+)
+parser.add_argument(
+    "--no-debug-save", action="store_true", help="Disable debug PNG saving"
+)
+parser.add_argument(
+    "--actions-per-step",
+    type=int,
+    default=None,
+    help="Use only first N actions per predict (receding horizon). Default: use all",
+)
+parser.add_argument(
+    "--async",
+    dest="async_mode",
+    action="store_true",
+    default=True,
+    help="Async mode: game runs in real-time, inference in background (default)",
+)
+parser.add_argument(
+    "--sync",
+    dest="async_mode",
+    action="store_false",
+    help="Sync mode: game paused during inference (uses speedhack)",
+)
+parser.add_argument(
+    "--width", type=int, default=1920, help="Game capture width (default: 1920)"
+)
+parser.add_argument(
+    "--height", type=int, default=1080, help="Game capture height (default: 1080)"
+)
 
 args = parser.parse_args()
 
@@ -91,36 +117,38 @@ PATH_MP4_DEBUG = PATH_OUT / f"{next_number:04d}_DEBUG.mp4"
 PATH_MP4_CLEAN = PATH_OUT / f"{next_number:04d}_CLEAN.mp4"
 PATH_ACTIONS = PATH_OUT / f"{next_number:04d}_ACTIONS.json"
 
+
 def preprocess_img(main_image):
     main_cv = cv2.cvtColor(np.array(main_image), cv2.COLOR_RGB2BGR)
     final_image = cv2.resize(main_cv, (256, 256), interpolation=cv2.INTER_AREA)
     return Image.fromarray(cv2.cvtColor(final_image, cv2.COLOR_BGR2RGB))
 
+
 zero_action = OrderedDict(
-        [ 
-            ("WEST", 0),
-            ("SOUTH", 0),
-            ("BACK", 0),
-            ("DPAD_DOWN", 0),
-            ("DPAD_LEFT", 0),
-            ("DPAD_RIGHT", 0),
-            ("DPAD_UP", 0),
-            ("GUIDE", 0),
-            ("AXIS_LEFTX", np.array([0], dtype=np.long)),
-            ("AXIS_LEFTY", np.array([0], dtype=np.long)),
-            ("LEFT_SHOULDER", 0),
-            ("LEFT_TRIGGER", np.array([0], dtype=np.long)),
-            ("AXIS_RIGHTX", np.array([0], dtype=np.long)),
-            ("AXIS_RIGHTY", np.array([0], dtype=np.long)),
-            ("LEFT_THUMB", 0),
-            ("RIGHT_THUMB", 0),
-            ("RIGHT_SHOULDER", 0),
-            ("RIGHT_TRIGGER", np.array([0], dtype=np.long)),
-            ("START", 0),
-            ("EAST", 0),
-            ("NORTH", 0),
-        ]
-    )
+    [
+        ("WEST", 0),
+        ("SOUTH", 0),
+        ("BACK", 0),
+        ("DPAD_DOWN", 0),
+        ("DPAD_LEFT", 0),
+        ("DPAD_RIGHT", 0),
+        ("DPAD_UP", 0),
+        ("GUIDE", 0),
+        ("AXIS_LEFTX", np.array([0], dtype=np.long)),
+        ("AXIS_LEFTY", np.array([0], dtype=np.long)),
+        ("LEFT_SHOULDER", 0),
+        ("LEFT_TRIGGER", np.array([0], dtype=np.long)),
+        ("AXIS_RIGHTX", np.array([0], dtype=np.long)),
+        ("AXIS_RIGHTY", np.array([0], dtype=np.long)),
+        ("LEFT_THUMB", 0),
+        ("RIGHT_THUMB", 0),
+        ("RIGHT_SHOULDER", 0),
+        ("RIGHT_TRIGGER", np.array([0], dtype=np.long)),
+        ("START", 0),
+        ("EAST", 0),
+        ("NORTH", 0),
+    ]
+)
 
 TOKEN_SET = BUTTON_ACTION_TOKENS
 
@@ -196,7 +224,9 @@ def run_async_loop(env, action_state, stop_event, fps=60):
 
 print("Model loaded, starting environment...")
 if args.actions_per_step:
-    print(f"Receding horizon mode: using {args.actions_per_step} actions per predict (model outputs 18)")
+    print(
+        f"Receding horizon mode: using {args.actions_per_step} actions per predict (model outputs 18)"
+    )
 else:
     print("Using all actions per predict")
 for i in range(3):
@@ -267,6 +297,7 @@ else:
 frames = None
 step_count = 0
 
+
 def run_loop(debug_recorder=None, clean_recorder=None):
     global obs, step_count
     try:
@@ -300,7 +331,9 @@ def run_loop(debug_recorder=None, clean_recorder=None):
                 move_action["AXIS_RIGHTY"] = np.array([int(yr * 32767)], dtype=np.long)
 
                 button_vector = buttons[i]
-                assert len(button_vector) == len(TOKEN_SET), "Button vector length does not match token set length"
+                assert len(button_vector) == len(TOKEN_SET), (
+                    "Button vector length does not match token set length"
+                )
 
                 for name, value in zip(TOKEN_SET, button_vector):
                     if "TRIGGER" in name:
@@ -323,10 +356,20 @@ def run_loop(debug_recorder=None, clean_recorder=None):
 
                     if debug_recorder and clean_recorder:
                         obs_viz = np.array(obs).copy()
-                        clean_viz = cv2.resize(obs_viz, (args.width, args.height), interpolation=cv2.INTER_AREA)
+                        clean_viz = cv2.resize(
+                            obs_viz,
+                            (args.width, args.height),
+                            interpolation=cv2.INTER_AREA,
+                        )
                         debug_viz = create_viz(
-                            cv2.resize(obs_viz, (1280, 720), interpolation=cv2.INTER_AREA),
-                            i, j_left, j_right, buttons, token_set=TOKEN_SET
+                            cv2.resize(
+                                obs_viz, (1280, 720), interpolation=cv2.INTER_AREA
+                            ),
+                            i,
+                            j_left,
+                            j_right,
+                            buttons,
+                            token_set=TOKEN_SET,
                         )
                         debug_recorder.add_frame(debug_viz)
                         clean_recorder.add_frame(clean_viz)
@@ -344,11 +387,14 @@ def run_loop(debug_recorder=None, clean_recorder=None):
 
             loop_time = time.perf_counter() - loop_start
             fps = 1.0 / loop_time if loop_time > 0 else 0
-            print(f"Step {step_count}: {len(env_actions)} actions, loop time: {loop_time*1000:.1f}ms ({fps:.1f} FPS)")
+            print(
+                f"Step {step_count}: {len(env_actions)} actions, loop time: {loop_time * 1000:.1f}ms ({fps:.1f} FPS)"
+            )
             step_count += 1
     finally:
         env.unpause()
         env.close()
+
 
 if args.async_mode:
     # Async mode: game runs in real-time, inference in background
@@ -360,7 +406,7 @@ if args.async_mode:
     inference_thread = threading.Thread(
         target=inference_worker,
         args=(env, policy, action_state, stop_event, preprocess_img, NO_MENU),
-        daemon=True
+        daemon=True,
     )
     inference_thread.start()
 
@@ -379,6 +425,10 @@ else:
         print("Recording disabled for faster inference")
         run_loop()
     else:
-        with VideoRecorder(str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium") as debug_recorder:
-            with VideoRecorder(str(PATH_MP4_CLEAN), fps=60, crf=28, preset="medium") as clean_recorder:
+        with VideoRecorder(
+            str(PATH_MP4_DEBUG), fps=60, crf=32, preset="medium"
+        ) as debug_recorder:
+            with VideoRecorder(
+                str(PATH_MP4_CLEAN), fps=60, crf=28, preset="medium"
+            ) as clean_recorder:
                 run_loop(debug_recorder, clean_recorder)

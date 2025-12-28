@@ -11,8 +11,15 @@ if __name__ == "__main__":
     parser.add_argument("--old-layout", action="store_true", help="Use old layout")
     parser.add_argument("--cfg", type=float, default=1.0, help="CFG scale")
     parser.add_argument("--ctx", type=int, default=1, help="Context length")
-    parser.add_argument("--no-compile", action="store_true", help="Disable torch.compile() optimization")
-    parser.add_argument("--steps", type=int, default=None, help="Override num_inference_timesteps (fewer = faster, lower quality)")
+    parser.add_argument(
+        "--no-compile", action="store_true", help="Disable torch.compile() optimization"
+    )
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=None,
+        help="Override num_inference_timesteps (fewer = faster, lower quality)",
+    )
     args = parser.parse_args()
 
     session = InferenceSession.from_ckpt(
@@ -20,7 +27,7 @@ if __name__ == "__main__":
         old_layout=args.old_layout,
         cfg_scale=args.cfg,
         context_length=args.ctx,
-        compile_model=not args.no_compile
+        compile_model=not args.no_compile,
     )
 
     # Override inference steps if specified
@@ -38,10 +45,10 @@ if __name__ == "__main__":
     poller = zmq.Poller()
     poller.register(socket, zmq.POLLIN)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Server running on port {args.port}")
     print(f"Waiting for requests...")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     try:
         while True:
@@ -62,12 +69,12 @@ if __name__ == "__main__":
                 elif request["type"] == "predict":
                     raw_image = request["image"]
                     result = session.predict(raw_image)
-                    response = {
-                        "status": "ok",
-                        "pred": result
-                    }
+                    response = {"status": "ok", "pred": result}
                 else:
-                    response = {"status": "error", "message": f"Unknown request type: {request['type']}"}
+                    response = {
+                        "status": "error",
+                        "message": f"Unknown request type: {request['type']}",
+                    }
                 # Send response
                 socket.send(pickle.dumps(response))
     except KeyboardInterrupt:

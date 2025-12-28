@@ -17,8 +17,12 @@ from torch import nn
 class TimestepEncoder(nn.Module):
     def __init__(self, embedding_dim, compute_dtype=torch.float32):
         super().__init__()
-        self.time_proj = Timesteps(num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=1)
-        self.timestep_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=embedding_dim)
+        self.time_proj = Timesteps(
+            num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=1
+        )
+        self.timestep_embedder = TimestepEmbedding(
+            in_channels=256, time_embed_dim=embedding_dim
+        )
 
     def forward(self, timesteps):
         dtype = next(self.parameters()).dtype
@@ -105,7 +109,9 @@ class BasicTransformerBlock(nn.Module):
         if norm_type == "ada_norm":
             self.norm1 = AdaLayerNorm(dim)
         else:
-            self.norm1 = nn.LayerNorm(dim, elementwise_affine=norm_elementwise_affine, eps=norm_eps)
+            self.norm1 = nn.LayerNorm(
+                dim, elementwise_affine=norm_elementwise_affine, eps=norm_eps
+            )
 
         self.attn1 = Attention(
             query_dim=dim,
@@ -141,7 +147,6 @@ class BasicTransformerBlock(nn.Module):
         encoder_attention_mask: Optional[torch.Tensor] = None,
         temb: Optional[torch.LongTensor] = None,
     ) -> torch.Tensor:
-
         # 0. Self-Attention
         if self.norm_type == "ada_norm":
             norm_hidden_states = self.norm1(hidden_states, temb)
@@ -173,6 +178,7 @@ class BasicTransformerBlock(nn.Module):
             hidden_states = hidden_states.squeeze(1)
         return hidden_states
 
+
 class DiTConfig(BaseModel):
     num_attention_heads: int = Field(default=8)
     attention_head_dim: int = Field(default=64)
@@ -191,13 +197,16 @@ class DiTConfig(BaseModel):
     final_dropout: bool = Field(default=True)
     positional_embeddings: Optional[str] = Field(default="sinusoidal")
     interleave_self_attention: bool = Field(default=False)
-    cross_attention_dim: Optional[int] = Field(default=None, description="Dimension of the cross-attention embeddings. If None, no cross-attention is used.")
+    cross_attention_dim: Optional[int] = Field(
+        default=None,
+        description="Dimension of the cross-attention embeddings. If None, no cross-attention is used.",
+    )
 
 
 class DiT(ModelMixin):
     _supports_gradient_checkpointing = True
 
-    def __init__(self,config: DiTConfig):
+    def __init__(self, config: DiTConfig):
         super().__init__()
 
         self.config = config
@@ -205,7 +214,9 @@ class DiT(ModelMixin):
         self.compute_dtype = getattr(torch, self.config.compute_dtype)
 
         self.attention_head_dim = self.config.attention_head_dim
-        self.inner_dim = self.config.num_attention_heads * self.config.attention_head_dim
+        self.inner_dim = (
+            self.config.num_attention_heads * self.config.attention_head_dim
+        )
         self.gradient_checkpointing = False
 
         # Timestep encoder
@@ -215,9 +226,10 @@ class DiT(ModelMixin):
 
         all_blocks = []
         for idx in range(self.config.num_layers):
-
             use_self_attn = idx % 2 == 1 and self.config.interleave_self_attention
-            curr_cross_attention_dim = self.config.cross_attention_dim if not use_self_attn else None
+            curr_cross_attention_dim = (
+                self.config.cross_attention_dim if not use_self_attn else None
+            )
 
             all_blocks += [
                 BasicTransformerBlock(
@@ -288,7 +300,9 @@ class DiT(ModelMixin):
         # Output processing
         conditioning = temb
         shift, scale = self.proj_out_1(F.silu(conditioning)).chunk(2, dim=1)
-        hidden_states = self.norm_out(hidden_states) * (1 + scale[:, None]) + shift[:, None]
+        hidden_states = (
+            self.norm_out(hidden_states) * (1 + scale[:, None]) + shift[:, None]
+        )
         if return_all_hidden_states:
             return self.proj_out_2(hidden_states), all_hidden_states
         else:
@@ -311,6 +325,7 @@ class SelfAttentionTransformerConfig(BaseModel):
     positional_embeddings: Optional[str] = Field(default="sinusoidal")
     interleave_self_attention: bool = Field(default=False)
 
+
 class SelfAttentionTransformer(ModelMixin):
     _supports_gradient_checkpointing = True
 
@@ -320,7 +335,9 @@ class SelfAttentionTransformer(ModelMixin):
         self.config = config
 
         self.attention_head_dim = self.config.attention_head_dim
-        self.inner_dim = self.config.num_attention_heads * self.config.attention_head_dim
+        self.inner_dim = (
+            self.config.num_attention_heads * self.config.attention_head_dim
+        )
         self.gradient_checkpointing = False
 
         self.transformer_blocks = nn.ModuleList(
@@ -350,7 +367,6 @@ class SelfAttentionTransformer(ModelMixin):
         hidden_states: torch.Tensor,  # Shape: (B, T, D)
         return_all_hidden_states: bool = False,
     ):
-
         # Process through transformer blocks - single pass through the blocks
         hidden_states = hidden_states.contiguous()
         all_hidden_states = [hidden_states]
@@ -390,7 +406,9 @@ class CrossAttentionTransformer(ModelMixin, ConfigMixin):
         super().__init__()
 
         self.attention_head_dim = attention_head_dim
-        self.inner_dim = self.config.num_attention_heads * self.config.attention_head_dim
+        self.inner_dim = (
+            self.config.num_attention_heads * self.config.attention_head_dim
+        )
         self.gradient_checkpointing = False
 
         self.transformer_blocks = nn.ModuleList(
@@ -420,7 +438,6 @@ class CrossAttentionTransformer(ModelMixin, ConfigMixin):
         hidden_states: torch.Tensor,  # Shape: (B, T, D)
         encoder_hidden_states: torch.Tensor,  # Shape: (B, S, D)
     ):
-
         # Process through transformer blocks - single pass through the blocks
         hidden_states = hidden_states.contiguous()
         encoder_hidden_states = encoder_hidden_states.contiguous()

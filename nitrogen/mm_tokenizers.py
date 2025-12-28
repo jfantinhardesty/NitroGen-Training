@@ -11,6 +11,7 @@ from itertools import count
 
 DEBUG = int(os.getenv("DEBUG", 0))
 
+
 class Tokenizer(ABC):
     @abstractmethod
     def encode(self, data: dict) -> dict:
@@ -52,6 +53,7 @@ class Tokenizer(ABC):
         """
         pass
 
+
 # Set IDs for each token type.
 _PAD_TOKEN = 0
 _IMG_TOKEN = 1
@@ -64,14 +66,19 @@ _GAME_ID_TOKEN = 6
 
 _UNCONDITIONAL_ID = None  # Special ID for unconditional game
 
+
 class GameMappingConfig(BaseModel):
-    src_files: list[str] = Field(default_factory=list, description="List of source parquet files to build game mapping.")
+    src_files: list[str] = Field(
+        default_factory=list,
+        description="List of source parquet files to build game mapping.",
+    )
+
 
 def get_game_mapping(cfg: GameMappingConfig) -> dict:
     game_set = set()
     for path in cfg.src_files:
         df = pl.read_parquet(path)
-        for game in df['game_label'].unique():
+        for game in df["game_label"].unique():
             if game == _UNCONDITIONAL_ID:
                 continue
             game_set.add(game)
@@ -81,15 +88,28 @@ def get_game_mapping(cfg: GameMappingConfig) -> dict:
     games = [_UNCONDITIONAL_ID] + games
     return {game: idx for idx, game in enumerate(games)}
 
+
 class NitrogenTokenizerConfig(BaseModel):
-    tokenizer_id: Literal['nitrogen'] = Field(default='nitrogen', frozen=True)
-    training: bool = Field(default=True, description="Whether to apply the transform in training mode.")
-    num_visual_tokens_per_frame: int = Field(default=256, description="Number of visual tokens per frame.")
+    tokenizer_id: Literal["nitrogen"] = Field(default="nitrogen", frozen=True)
+    training: bool = Field(
+        default=True, description="Whether to apply the transform in training mode."
+    )
+    num_visual_tokens_per_frame: int = Field(
+        default=256, description="Number of visual tokens per frame."
+    )
     max_action_dim: int = Field(default=25, description="Maximum action dimension.")
-    max_sequence_length: int = Field(default=300, description="Maximum sequence length.")
+    max_sequence_length: int = Field(
+        default=300, description="Maximum sequence length."
+    )
     action_horizon: int = Field(default=16, description="Action horizon.")
-    game_mapping_cfg: GameMappingConfig | None = Field(default=None, description="Game mapping configuration.")
-    old_layout: bool = Field(default=False, description="Whether to use the old layout for actions. If True, the action layout is [buttons, j_left, j_right]. If False, it is [j_left, j_right, buttons].")
+    game_mapping_cfg: GameMappingConfig | None = Field(
+        default=None, description="Game mapping configuration."
+    )
+    old_layout: bool = Field(
+        default=False,
+        description="Whether to use the old layout for actions. If True, the action layout is [buttons, j_left, j_right]. If False, it is [j_left, j_right, buttons].",
+    )
+
 
 class NitrogenTokenizer(Tokenizer):
     """
@@ -112,6 +132,7 @@ class NitrogenTokenizer(Tokenizer):
             self.game_mapping = get_game_mapping(config.game_mapping_cfg)
             with open("game_mapping.json", "w") as f:
                 import json
+
                 json.dump(self.game_mapping, f, indent=2)
         else:
             self.game_mapping = None
@@ -142,22 +163,28 @@ class NitrogenTokenizer(Tokenizer):
         """
         if "action" not in data:
             actions = np.zeros((self.action_horizon, self.max_action_dim))
-            actions_mask = np.zeros((self.action_horizon, self.max_action_dim), dtype=bool)
+            actions_mask = np.zeros(
+                (self.action_horizon, self.max_action_dim), dtype=bool
+            )
             n_action_tokens = self.action_horizon
             return actions, actions_mask, n_action_tokens
 
         actions = data["action"]
-        assert actions.shape[0] == self.action_horizon, f"{actions.shape=}, {self.action_horizon=}"
+        assert actions.shape[0] == self.action_horizon, (
+            f"{actions.shape=}, {self.action_horizon=}"
+        )
 
         n_action_tokens = actions.shape[0]  # T
         n_action_dims = actions.shape[1]
 
-        assert (
-            n_action_dims <= self.max_action_dim
-        ), f"Action dim {n_action_dims} exceeds max allowed {self.max_action_dim}."
+        assert n_action_dims <= self.max_action_dim, (
+            f"Action dim {n_action_dims} exceeds max allowed {self.max_action_dim}."
+        )
 
         # Pad the channel dimension
-        actions = np.pad(actions, ((0, 0), (0, self.max_action_dim - n_action_dims)), "constant")
+        actions = np.pad(
+            actions, ((0, 0), (0, self.max_action_dim - n_action_dims)), "constant"
+        )
 
         # Create mask: [T, max_action_dim]
         actions_mask = np.zeros((n_action_tokens, self.max_action_dim), dtype=bool)
@@ -165,7 +192,9 @@ class NitrogenTokenizer(Tokenizer):
 
         return actions, actions_mask, n_action_tokens
 
-    def _build_token_ids(self, n_images, n_action_tokens): # n_lang_tokens, n_state_tokens):
+    def _build_token_ids(
+        self, n_images, n_action_tokens
+    ):  # n_lang_tokens, n_state_tokens):
         """
         Build the 1D array of token_ids based on the number of each block.
         Return (token_ids, special_pad_token_idx).
@@ -206,7 +235,9 @@ class NitrogenTokenizer(Tokenizer):
         left_pad_len = self.max_sequence_length - vl_seq_len
 
         # Pad token_ids (with PAD_TOKEN)
-        vl_token_ids = np.pad(vl_token_ids, (left_pad_len, 0), constant_values=_PAD_TOKEN)
+        vl_token_ids = np.pad(
+            vl_token_ids, (left_pad_len, 0), constant_values=_PAD_TOKEN
+        )
 
         # Pad attention mask with 0 (padding tokens)
         vl_attn_mask = np.pad(vl_attn_mask, (left_pad_len, 0), constant_values=0)
@@ -222,11 +253,11 @@ class NitrogenTokenizer(Tokenizer):
         )
 
         # Normalize the joysticks to 0,1
-        j_left = (j_left + 1) / 2.
-        j_right = (j_right + 1) / 2.
+        j_left = (j_left + 1) / 2.0
+        j_right = (j_right + 1) / 2.0
 
         # Concatenate the buttons and joysticks along the last dimension
-        action = np.concatenate([buttons,j_left,j_right],axis=-1, dtype=np.float32)
+        action = np.concatenate([buttons, j_left, j_right], axis=-1, dtype=np.float32)
 
         # Squeeze the first dimension of each input: this is the number of chunks, which is 1 here
         action = action.squeeze(0)
@@ -245,8 +276,8 @@ class NitrogenTokenizer(Tokenizer):
             j_right = actions[:, :, -2:]
 
         # Denormalize the joysticks back to -1,1
-        j_left = j_left * 2. - 1.
-        j_right = j_right * 2. - 1.
+        j_left = j_left * 2.0 - 1.0
+        j_right = j_right * 2.0 - 1.0
 
         # Clip into [-1,1]
         j_left = torch.clamp(j_left, -1, 1)
@@ -269,7 +300,6 @@ class NitrogenTokenizer(Tokenizer):
 
         # 1) Pack buttons/joysticks into a single action tensor
 
-
         transformed_data = {**data}  # Start with a copy of the input data
 
         n_images = (data["dropped_frames"] == False).sum()
@@ -279,9 +309,7 @@ class NitrogenTokenizer(Tokenizer):
         if self.training:
             # Keep the original actions in the data for evaluation
             packed_actions = self.pack_actions(
-                data["buttons"],
-                data["j_left"],
-                data["j_right"]
+                data["buttons"], data["j_left"], data["j_right"]
             )
             data["action"] = packed_actions
 
@@ -295,16 +323,16 @@ class NitrogenTokenizer(Tokenizer):
             assert all(
                 transformed_data[key].shape == transformed_data["actions"].shape
                 for key in action_and_mask_keys
-            ), f"Shape mismatch: {[(key, transformed_data[key].shape) for key in action_and_mask_keys]}"
+            ), (
+                f"Shape mismatch: {[(key, transformed_data[key].shape) for key in action_and_mask_keys]}"
+            )
         else:
             n_action_tokens = self.action_horizon
 
         transformed_data["has_detection_target"] = np.zeros((), dtype=bool)
 
         # 5) Build token_ids
-        vl_token_ids, sa_token_ids = self._build_token_ids(
-            n_images, n_action_tokens
-        )
+        vl_token_ids, sa_token_ids = self._build_token_ids(n_images, n_action_tokens)
 
         # 6) Build the attention mask only for vision-language tokens
         vl_token_ids, vl_attn_mask = self._prepare_attention_mask(vl_token_ids)
@@ -316,15 +344,19 @@ class NitrogenTokenizer(Tokenizer):
 
         if self.game_mapping:
             game_name = data["game"]
-            assert game_name in self.game_mapping, f"Game '{game_name}' not found in game mapping."
-            transformed_data["game_ids"] = torch.tensor(self.game_mapping[game_name], dtype=torch.long)
+            assert game_name in self.game_mapping, (
+                f"Game '{game_name}' not found in game mapping."
+            )
+            transformed_data["game_ids"] = torch.tensor(
+                self.game_mapping[game_name], dtype=torch.long
+            )
         else:
             transformed_data["game_ids"] = torch.tensor(0, dtype=torch.long)
         return transformed_data
 
     def decode(self, data: dict) -> dict:
         j_left, j_right, buttons = self.unpack_actions(data["action_tensor"])
-        
+
         return {
             "j_left": j_left,
             "j_right": j_right,

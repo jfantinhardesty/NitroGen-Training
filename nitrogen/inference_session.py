@@ -11,10 +11,11 @@ from nitrogen.mm_tokenizers import NitrogenTokenizerConfig, NitrogenTokenizer, T
 from nitrogen.cfg import CkptConfig
 from nitrogen.shared import PATH_REPO
 
-def summarize_parameters(module, name='model', depth=0, max_depth=3):
+
+def summarize_parameters(module, name="model", depth=0, max_depth=3):
     """
     Print a tree-like summary of parameters in a PyTorch module.
-    
+
     Args:
         module: PyTorch module to summarize
         name: Name of the module (for root level)
@@ -23,15 +24,15 @@ def summarize_parameters(module, name='model', depth=0, max_depth=3):
     """
     if depth > max_depth:
         return
-    
+
     # Count total parameters in this module
     total_params = sum(p.numel() for p in module.parameters())
     trainable_params = sum(p.numel() for p in module.parameters() if p.requires_grad)
-    
+
     # Print indented summary
     indent = "  " * depth
     print(f"{indent}{name}: {total_params:,} params ({trainable_params:,} trainable)")
-    
+
     # Recursively summarize submodules
     if depth < max_depth:
         for child_name, child_module in module.named_children():
@@ -49,12 +50,15 @@ def load_model(checkpoint_path: str, compile_model: bool = True):
     print(json.dumps(ckpt_config.model_dump(), indent=4))
 
     # Initialize tokenizer and language model
-    img_proc = AutoImageProcessor.from_pretrained(model_cfg.vision_encoder_name, use_fast=True)
+    img_proc = AutoImageProcessor.from_pretrained(
+        model_cfg.vision_encoder_name, use_fast=True
+    )
 
     # Create VLM with pre-loaded language model
     if isinstance(model_cfg, NitroGen_Config):
-        assert isinstance(tokenizer_cfg, NitrogenTokenizerConfig), \
+        assert isinstance(tokenizer_cfg, NitrogenTokenizerConfig), (
             "NitroGen_Config requires NitrogenTokenizerConfig for tokenization"
+        )
         tokenizer_cfg.training = False
         if tokenizer_cfg.game_mapping_cfg is not None:
             tokenizer_cfg.game_mapping_cfg.src_files = [
@@ -81,6 +85,7 @@ def load_model(checkpoint_path: str, compile_model: bool = True):
     # Compile model components for faster inference
     if compile_model:
         import platform
+
         print("Compiling model with torch.compile()...")
 
         # Triton not available on Windows, use cudagraphs backend instead
@@ -96,17 +101,27 @@ def load_model(checkpoint_path: str, compile_model: bool = True):
         try:
             # Compile the entire get_action method for better cross-component optimization
             model.get_action = torch.compile(model.get_action, **compile_opts)
-            model.get_action_with_cfg = torch.compile(model.get_action_with_cfg, **compile_opts)
+            model.get_action_with_cfg = torch.compile(
+                model.get_action_with_cfg, **compile_opts
+            )
             print("Model compiled. First inference will be slower (JIT warmup).")
         except Exception as e:
             print(f"Warning: torch.compile() failed: {e}")
             print("Continuing without compilation...")
 
-    return model, tokenizer, img_proc, ckpt_config, game_mapping, action_downsample_ratio
+    return (
+        model,
+        tokenizer,
+        img_proc,
+        ckpt_config,
+        game_mapping,
+        action_downsample_ratio,
+    )
+
 
 class InferenceSession:
     """Manages state for a single inference session."""
-    
+
     def __init__(
         self,
         model,
@@ -119,7 +134,7 @@ class InferenceSession:
         old_layout: bool,
         cfg_scale: float,
         action_downsample_ratio: float,
-        context_length=None
+        context_length=None,
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -135,7 +150,11 @@ class InferenceSession:
         # Load modality config
         self.modality_config = self.ckpt_config.modality_cfg
 
-        self.max_buffer_size = context_length if context_length is not None else self.modality_config.frame_per_sample
+        self.max_buffer_size = (
+            context_length
+            if context_length is not None
+            else self.modality_config.frame_per_sample
+        )
         self.action_interleaving = self.modality_config.action_interleaving
         self.is_flowmatching = isinstance(self.ckpt_config.model_cfg, NitroGen_Config)
 
@@ -144,26 +163,44 @@ class InferenceSession:
         self.action_buffer = deque(maxlen=self.max_buffer_size)
 
     @classmethod
-    def from_ckpt(cls, checkpoint_path: str, old_layout=False, cfg_scale=1.0, context_length=None, compile_model=True):
+    def from_ckpt(
+        cls,
+        checkpoint_path: str,
+        old_layout=False,
+        cfg_scale=1.0,
+        context_length=None,
+        compile_model=True,
+    ):
         """Create an InferenceSession from a checkpoint."""
-        model, tokenizer, img_proc, ckpt_config, game_mapping, action_downsample_ratio = load_model(
-            checkpoint_path, compile_model=compile_model
-        )
+        (
+            model,
+            tokenizer,
+            img_proc,
+            ckpt_config,
+            game_mapping,
+            action_downsample_ratio,
+        ) = load_model(checkpoint_path, compile_model=compile_model)
 
         if game_mapping is not None:
             # Ask user to pick a game from the list
             print("Available games in tokenizer mapping:")
             for game, idx in game_mapping.items():
                 print(f"{idx:03d}: {game}")
-            selected_game = input("Enter the game ID to use (leave empty for unconditional): ")
+            selected_game = input(
+                "Enter the game ID to use (leave empty for unconditional): "
+            )
             if selected_game == "":
                 selected_game = None
             else:
                 selected_idx = int(selected_game)
-                assert selected_idx in game_mapping.values(), f"Invalid game ID {selected_idx}"
+                assert selected_idx in game_mapping.values(), (
+                    f"Invalid game ID {selected_idx}"
+                )
 
-                candidates = [k for k,v in game_mapping.items() if v == selected_idx]
-                assert len(candidates) == 1, f"Multiple games found for ID {selected_idx}: {candidates}"
+                candidates = [k for k, v in game_mapping.items() if v == selected_idx]
+                assert len(candidates) == 1, (
+                    f"Multiple games found for ID {selected_idx}: {candidates}"
+                )
 
                 selected_game = candidates[0]
         else:
@@ -181,7 +218,7 @@ class InferenceSession:
             old_layout,
             cfg_scale,
             action_downsample_ratio,
-            context_length
+            context_length,
         )
 
     def info(self):
@@ -206,10 +243,10 @@ class InferenceSession:
 
         current_frame = self.img_proc([obs], return_tensors="pt")["pixel_values"]
         self.obs_buffer.append(current_frame)
-        
+
         # Prepare model inputs
         pixel_values = torch.cat(list(self.obs_buffer), dim=0)
-    
+
         if self.action_interleaving and len(self.action_buffer) > 0:
             action_tensors = {
                 key: torch.cat([a[key] for a in list(self.action_buffer)], dim=0)
@@ -232,10 +269,10 @@ class InferenceSession:
             predicted_actions = self._predict_flowmatching(pixel_values, action_tensors)
         else:
             predicted_actions = self._predict_ar(pixel_values, action_tensors)
-        
+
         # Add to action buffer
         self.action_buffer.append(predicted_actions)
-        
+
         inference_time = time.time() - start_time
         print(f"Inference time: {inference_time:.3f}s")
 
@@ -252,32 +289,41 @@ class InferenceSession:
         }
 
     def _predict_flowmatching(self, pixel_values, action_tensors):
-
         available_frames = len(self.obs_buffer)
-        frames = torch.zeros((self.max_buffer_size, *pixel_values.shape[1:]), 
-                            dtype=pixel_values.dtype, device="cuda")
+        frames = torch.zeros(
+            (self.max_buffer_size, *pixel_values.shape[1:]),
+            dtype=pixel_values.dtype,
+            device="cuda",
+        )
         frames[-available_frames:] = pixel_values
-        dropped_frames = torch.zeros((self.max_buffer_size,), dtype=torch.bool, device="cuda")
-        dropped_frames[:self.max_buffer_size - available_frames] = True
-        
+        dropped_frames = torch.zeros(
+            (self.max_buffer_size,), dtype=torch.bool, device="cuda"
+        )
+        dropped_frames[: self.max_buffer_size - available_frames] = True
+
         data_with_history = {
             "frames": frames,
             "dropped_frames": dropped_frames,
-            "game": self.selected_game
+            "game": self.selected_game,
         }
         tokenized_data_with_history = self.tokenizer.encode(data_with_history)
-        
-        frame_mask = torch.ones((self.max_buffer_size,), dtype=torch.bool, device="cuda")
+
+        frame_mask = torch.ones(
+            (self.max_buffer_size,), dtype=torch.bool, device="cuda"
+        )
         frame_mask[-1] = False
         data_without_history = {
             "frames": frames,
             "dropped_frames": frame_mask,
-            "game": None
+            "game": None,
         }
         tokenized_data_without_history = self.tokenizer.encode(data_without_history)
-        
+
         # Convert to CUDA tensors with batch dimension
-        for tokenized_data in [tokenized_data_with_history, tokenized_data_without_history]:
+        for tokenized_data in [
+            tokenized_data_with_history,
+            tokenized_data_without_history,
+        ]:
             for k, v in tokenized_data.items():
                 if isinstance(v, torch.Tensor):
                     tokenized_data[k] = v.unsqueeze(0).to("cuda")
@@ -285,20 +331,21 @@ class InferenceSession:
                     tokenized_data[k] = torch.tensor(v, device="cuda").unsqueeze(0)
                 else:
                     tokenized_data[k] = [v]
-        
+
         with torch.inference_mode():
             # Mark step begin for CUDA graphs on Windows
             torch.compiler.cudagraph_mark_step_begin()
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 if self.cfg_scale == 1.0:
-                    model_output = self.model.get_action(tokenized_data_with_history, 
-                                                        old_layout=self.old_layout)
+                    model_output = self.model.get_action(
+                        tokenized_data_with_history, old_layout=self.old_layout
+                    )
                 else:
                     model_output = self.model.get_action_with_cfg(
                         tokenized_data_with_history,
                         tokenized_data_without_history,
-                        cfg_scale=self.cfg_scale
+                        cfg_scale=self.cfg_scale,
                     )
                 predicted_actions = self.tokenizer.decode(model_output)
-        
+
         return predicted_actions
