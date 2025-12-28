@@ -38,9 +38,9 @@ def summarize_parameters(module, name='model', depth=0, max_depth=3):
             summarize_parameters(child_module, child_name, depth + 1, max_depth)
 
 
-def load_model(checkpoint_path: str):
+def load_model(checkpoint_path: str, compile_model: bool = True):
     """Load model and args from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location="cuda", weights_only=False)
     ckpt_config = CkptConfig.model_validate(checkpoint["ckpt_config"])
     model_cfg = ckpt_config.model_cfg
     tokenizer_cfg = ckpt_config.tokenizer_cfg
@@ -49,7 +49,7 @@ def load_model(checkpoint_path: str):
     print(json.dumps(ckpt_config.model_dump(), indent=4))
 
     # Initialize tokenizer and language model
-    img_proc = AutoImageProcessor.from_pretrained(model_cfg.vision_encoder_name)
+    img_proc = AutoImageProcessor.from_pretrained(model_cfg.vision_encoder_name, use_fast=True)
 
     # Create VLM with pre-loaded language model
     if isinstance(model_cfg, NitroGen_Config):
@@ -64,7 +64,7 @@ def load_model(checkpoint_path: str):
         tokenizer = NitrogenTokenizer(tokenizer_cfg)
         game_mapping = tokenizer.game_mapping
         model = NitroGen(config=model_cfg, game_mapping=game_mapping)
-        # model.num_inference_timesteps = 16
+        # model.num_inference_timesteps = 4
         action_downsample_ratio = 1
     else:
         raise ValueError(f"Unsupported model config type: {type(model_cfg)}")
@@ -77,6 +77,30 @@ def load_model(checkpoint_path: str):
     model.eval()
     tokenizer.eval()
     model.to("cuda")
+
+    # Compile model components for faster inference
+    if compile_model:
+        import platform
+        print("Compiling model with torch.compile()...")
+
+        # Triton not available on Windows, use cudagraphs backend instead
+        if platform.system() == "Windows":
+            compile_opts = {"backend": "cudagraphs"}
+            print("Using cudagraphs backend (Windows)")
+        else:
+            # Linux: use inductor with reduce-overhead for faster compilation
+            # max-autotune takes 30+ min, reduce-overhead is much faster
+            compile_opts = {"mode": "reduce-overhead"}
+            print("Using inductor backend with reduce-overhead mode")
+
+        try:
+            # Compile the entire get_action method for better cross-component optimization
+            model.get_action = torch.compile(model.get_action, **compile_opts)
+            model.get_action_with_cfg = torch.compile(model.get_action_with_cfg, **compile_opts)
+            print("Model compiled. First inference will be slower (JIT warmup).")
+        except Exception as e:
+            print(f"Warning: torch.compile() failed: {e}")
+            print("Continuing without compilation...")
 
     return model, tokenizer, img_proc, ckpt_config, game_mapping, action_downsample_ratio
 
@@ -120,9 +144,11 @@ class InferenceSession:
         self.action_buffer = deque(maxlen=self.max_buffer_size)
 
     @classmethod
-    def from_ckpt(cls, checkpoint_path: str, old_layout=False, cfg_scale=1.0, context_length=None):
+    def from_ckpt(cls, checkpoint_path: str, old_layout=False, cfg_scale=1.0, context_length=None, compile_model=True):
         """Create an InferenceSession from a checkpoint."""
-        model, tokenizer, img_proc, ckpt_config, game_mapping, action_downsample_ratio = load_model(checkpoint_path)
+        model, tokenizer, img_proc, ckpt_config, game_mapping, action_downsample_ratio = load_model(
+            checkpoint_path, compile_model=compile_model
+        )
 
         if game_mapping is not None:
             # Ask user to pick a game from the list
@@ -261,6 +287,8 @@ class InferenceSession:
                     tokenized_data[k] = [v]
         
         with torch.inference_mode():
+            # Mark step begin for CUDA graphs on Windows
+            torch.compiler.cudagraph_mark_step_begin()
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 if self.cfg_scale == 1.0:
                     model_output = self.model.get_action(tokenized_data_with_history, 

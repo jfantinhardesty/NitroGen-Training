@@ -1,29 +1,22 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "nitrogen"
 version = "1.0.0"
 description = "VLM-based game playing agent"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.12.*"
 
 # Default: everything
 dependencies = [
     # Shared
     "numpy",
     "pyzmq",
-    
     # Serve
-    "torch",
     "pyyaml",
     "einops",
     "transformers",
     "pydantic",
     "diffusers",
     "polars",
-    
     # Play (Windows-only deps marked)
     "pillow",
     "opencv-python",
@@ -42,7 +35,6 @@ dependencies = [
 serve = [
     "numpy",
     "pyzmq",
-    "torch",
     "pyyaml",
     "einops",
     "transformers",
@@ -67,6 +59,94 @@ play = [
     "xspeedhack",
 ]
 
+cpu = [
+    "nitrogen",
+    "torch",
+    "torchvision",
+]
+
+cu126 = [
+    "nitrogen",
+    "torch",
+    "torchvision",
+]
+
+cu128 = [
+    "nitrogen",
+    "torch",
+    "torchvision",
+]
+
+cu129 = [
+    "nitrogen",
+    "torch==2.8.0+cu129",
+    "torchvision==0.23.0+cu129",
+]
+
+cu130 = [
+    "nitrogen",
+    "torch==2.9.1+cu130",
+    "torchvision==0.24.1+cu130",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 exclude = ["scripts*"]
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cu126" },
+        { extra = "cu128" },
+        { extra = "cu129" },
+        { extra = "cu130" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu129", extra = "cu129" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu129", extra = "cu129" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
